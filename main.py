@@ -12,7 +12,7 @@ class App(tk.Tk):
         'bg': '#f0f2f5',  # 页面背景（浅灰）
         'nav_bg': '#ffffff',  # 导航栏背景（纯白）
         'active_nav': '#165dff',  # 选中导航按钮（品牌蓝）
-        'btn_normal': '#ffffff',  # 普通按钮背景（白）
+        'btn_normal': '#e6e6e6',  # 普通按钮背景（白）
         'btn_hover': '#f0f5ff',  # 按钮悬停（浅蓝灰）
         'btn_active': '#e6f7ff',  # 按钮点击（更浅蓝）
         'text': '#1f2329',  # 文本颜色（深灰）
