@@ -1,7 +1,8 @@
 import os
 import datetime
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox,scrolledtext,ttk
 from utils import LocalOffer, LocalReply, OtherOffer, OtherReply
 
 
@@ -27,7 +28,7 @@ class App(tk.Tk):
         super().__init__()
         self.title('文件处理工具')
         self.geometry('850x520')  # 适度放大窗口
-        self.minsize(800, 500)  # 最小尺寸限制
+        self.minsize(800, 550)  # 最小尺寸限制
         self.configure(bg=self.COLORS['bg'])
 
         # 顶部导航栏（带阴影效果）
@@ -188,24 +189,30 @@ class _BasePage(tk.Frame):
             bd=1,
             highlightbackground=self.controller.COLORS['border'],
             highlightthickness=1,
-            height=80
+            # height=80
         )
-        self.status_frame.pack(fill='x', pady=(10, 0))
-        self.status_frame.pack_propagate(False)
+        self.status_frame.pack(fill='both', expand=True, pady=(10, 0))
+        # 行/列权重，保证 Text 区域占满
+        self.status_frame.rowconfigure(0, weight=1)
+        self.status_frame.columnconfigure(0, weight=1)
 
-        self.status_label = tk.Label(
+        self.status_text = scrolledtext.ScrolledText(
             self.status_frame,
-            text='',
+            wrap='word',
             font=('Microsoft YaHei', 10),
             fg=self.controller.COLORS['text_light'],
             bg=self.controller.COLORS['status_bg'],
-            anchor='w',
-            justify='left',
-            wraplength=700,
             padx=15,
-            pady=8
+            pady=8,
+            height=5,  # 字符行数
+            borderwidth=0,
+            highlightthickness=0,
+            state='disabled'
         )
-        self.status_label.pack(side='top', fill='x', expand=True)
+        self.status_text.grid(row=0, column=0, sticky='nsew')
+
+        # 右下角 Sizegrip（小三角拖柄）
+        ttk.Sizegrip(self.status_frame).grid(row=0, column=0, sticky='se')
 
         self.path_vars = []
 
@@ -218,11 +225,24 @@ class _BasePage(tk.Frame):
         self.display_status('请选择文件并执行操作', success=None)
 
     def display_status(self, msg, success=True):
-        if success is None:  # 初始状态
-            self.status_label.config(text=msg, fg=self.controller.COLORS['text_light'])
+        # 1. 先解锁
+        self.status_text.config(state='normal')
+        # 2. 清空旧内容
+        self.status_text.delete('1.0', 'end')
+        # 3. 写入新消息
+        self.status_text.insert('end', msg)
+        # 4. 设置颜色
+        if success is None:
+            color = self.controller.COLORS['text_light']
         else:
-            color = self.controller.COLORS['success'] if success else self.controller.COLORS['error']
-            self.status_label.config(text=msg, fg=color)
+            color = (self.controller.COLORS['success'] if success
+                     else self.controller.COLORS['error'])
+        # Text 控件没有 fg，所以用 tag 给整行上色
+        self.status_text.tag_config('whole', foreground=color)
+        self.status_text.tag_add('whole', '1.0', 'end')
+        # 5. 重新设为只读并滚到底
+        self.status_text.config(state='disabled')
+        self.status_text.see('end')
 
     # 优化输入行样式（带图标感）
     def build_row(self, label, var, file_type):
@@ -359,13 +379,17 @@ class LocalOfferPage(_BasePage):
         if not self.txt_path.get():
             messagebox.showwarning('提示', '请先选择TXT文件')
             return
+        elif "本行报盘.txt" not in Path(self.txt_path.get()).name:
+            messagebox.showwarning('提示', '本行报盘.txt文件选择错误！')
+            return
 
         def job():
-            out_path = os.path.splitext(self.txt_path.get())[0] + '_报盘结果.xls'
+            out_path = Path(self.txt_path.get()).with_name("工行本行报盘.xls")
+            # out_path = os.path.splitext(self.txt_path.get())[0] + '_报盘结果.xls'
             LocalOffer(self.txt_path.get(), out_path)
             return out_path
 
-        self.run_job(job, '本行报盘转换成功')
+        self.run_job(job, '本行报盘文件转换成功')
 
 
 # -------------------- 2. 本行回盘 --------------------
@@ -422,13 +446,30 @@ class LocalReplyPage(_BasePage):
         if not self.txt_report.get() or not self.xls_reply.get():
             messagebox.showwarning('提示', '请先选择两个文件')
             return
+        elif "本行报盘.txt" not in Path(self.txt_report.get()).name:
+            messagebox.showwarning('提示', '本行报盘.txt文件选择错误！')
+            return
+        elif "本行回盘.xls" not in Path(self.xls_reply.get()).name:
+            messagebox.showwarning('提示', '本行回盘.xls文件选择错误！')
+            return
 
-        def job():
-            out_path = os.path.splitext(self.txt_report.get())[0] + '_回盘结果.txt'
-            LocalReply(self.txt_report.get(), self.xls_reply.get(), out_path)
-            return out_path
+        out_path = Path(self.txt_report.get()).with_name("自来水本行回盘.txt")
+        # out_path = os.path.splitext(self.txt_report.get())[0] + '_回盘结果.txt'
+        mess, txt_xls, xls_txt = LocalReply(self.txt_report.get(), self.xls_reply.get(), out_path)
 
-        self.run_job(job, '本行回盘处理成功')
+        self.display_status('处理中...', success=None)
+        if mess == "文件信息一致":
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.display_status(
+                f'✅ 本行回盘文件转换成功（{now}）\n文件路径：{out_path}',
+                True
+            )
+        else:
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.display_status(
+                f'❌ 操作失败（{now}）：{mess}\n❌ txt有但xls没有：{txt_xls}\n❌ xls有但txt没有：{xls_txt}',
+                False
+            )
 
 
 # -------------------- 3. 他行报盘 --------------------
@@ -483,13 +524,17 @@ class OtherOfferPage(_BasePage):
         if not self.txt_path.get():
             messagebox.showwarning('提示', '请先选择TXT文件')
             return
+        elif "他行报盘.txt" not in Path(self.txt_path.get()).name:
+            messagebox.showwarning('提示', '他行报盘.txt文件选择错误！')
+            return
 
         def job():
-            out_path = os.path.splitext(self.txt_path.get())[0] + '_报盘结果.xls'
+            out_path = Path(self.txt_path.get()).with_name("工行他行报盘.xls")
+            # out_path = os.path.splitext(self.txt_path.get())[0] + '_报盘结果.xls'
             OtherOffer(self.txt_path.get(), out_path)
             return out_path
 
-        self.run_job(job, '他行报盘转换成功')
+        self.run_job(job, '他行报盘文件转换成功')
 
 
 # -------------------- 4. 他行回盘 --------------------
@@ -546,13 +591,30 @@ class OtherReplyPage(_BasePage):
         if not self.txt_path.get() or not self.excel_path.get():
             messagebox.showwarning('提示', '请先选择两个文件')
             return
+        elif "他行报盘.txt" not in Path(self.txt_path.get()).name:
+            messagebox.showwarning('提示', '他行报盘.txt文件选择错误！')
+            return
+        elif "他行回盘.xls" not in Path(self.excel_path.get()).name:
+            messagebox.showwarning('提示', '他行回盘.xls文件选择错误！')
+            return
 
-        def job():
-            out_path = os.path.splitext(self.txt_path.get())[0] + '_回盘结果.txt'
-            OtherReply(self.txt_path.get(), self.excel_path.get(), out_path)
-            return out_path
+        out_path = Path(self.txt_path.get()).with_name("自来水他行回盘")
+        # out_path = os.path.splitext(self.txt_report.get())[0] + '_回盘结果.txt'
+        mess, txt_xls, xls_txt = OtherReply(self.txt_path.get(), self.excel_path.get(), out_path)
 
-        self.run_job(job, '他行回盘处理成功')
+        self.display_status('处理中...', success=None)
+        if mess == "文件信息一致":
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.display_status(
+                f'✅ 他行回盘文件转换成功（{now}）\n文件路径：{out_path}',
+                True
+            )
+        else:
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.display_status(
+                f'❌ 操作失败（{now}）：{mess}\n❌ txt有但xls没有：{txt_xls}\n❌ xls有但txt没有：{xls_txt}',
+                False
+            )
 
 
 if __name__ == '__main__':

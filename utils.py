@@ -72,7 +72,7 @@ def LocalOffer(txt_path, excel_path):
 
     # 直接使用xlwt创建xls文件
     workbook = xlwt.Workbook(encoding='utf-8')
-    worksheet = workbook.add_sheet('数据')  # 直接创建工作表
+    worksheet = workbook.add_sheet('工行')  # 直接创建工作表
 
     # 定义格式
     header_font = xlwt.Font()
@@ -126,8 +126,8 @@ def LocalOffer(txt_path, excel_path):
     print('报盘文件转换成功！', excel_path)
 
 # -------------------- 2. 本行回盘 --------------------
-def LocalReply(txt_report_path, excel_reply_path,txt_reply_path):
-
+def LocalReply(txt_report_path, excel_reply_path, txt_reply_path):
+    mess = ""
     # ---------- ①. 读 xls 建字典 ----------
     wb = xlrd.open_workbook(excel_reply_path)
     sheet = wb.sheet_by_index(0)
@@ -139,47 +139,64 @@ def LocalReply(txt_report_path, excel_reply_path,txt_reply_path):
                str(int(round(float(row[2]) * 100))),  # 金额*100
                str(row[3]).strip())  # 原备注
         flag = str(row[5]).strip()
-        xls_map[key] = flag
+        xls_map[key] = flag          # value 先保留，后面还要用
 
     # ---------- ②. 编码侦探 ----------
     with open(txt_report_path, 'rb') as f:
         raw = f.read(10000)
     enc = chardet.detect(raw)['encoding'] or 'gbk'
-    # print('detected encode:', enc)
 
-    # ---------- ③. 逐行处理 ----------
-    # 正则：10 列，第 9 列正好是 4 位数字
-    # 分组：前面部分、第 9 列、后面部分
-    pat = re.compile(rb'^((?:\S+\s+){8})(\d{4})(\s+\S+.*)$')
-
-    with open(txt_report_path, 'rb') as fin, open(txt_reply_path, 'wb') as fout:
+    # ---------- ③. 收集 txt 中的 key ----------
+    txt_keys = set()
+    with open(txt_report_path, 'rb') as fin:
         for line_b in fin:
             line_u = line_b.decode(enc).rstrip('\r\n')
             parts_u = line_u.split()
-            if len(parts_u) != 10:  # 格式不对，原样输出
-                fout.write(line_b)
+            if len(parts_u) != 10:
                 continue
+            key = (parts_u[4], parts_u[3], parts_u[6], parts_u[8])
+            txt_keys.add(key)
 
-            # 构造查询 key
-            key = (parts_u[4],  # 姓名
-                   parts_u[3],  # 卡号
-                   parts_u[6],  # 金额
-                   parts_u[8])  # 原 4 位备注
+    # ---------- ④. 核对并逐行处理----------
+    # 正则：10 列，第 9 列正好是 4 位数字
+    # 分组：前面部分、第 9 列、后面部分
+    xls_keys = set(xls_map.keys())
+    if txt_keys == xls_keys:          # 集合相等：元素个数与内容完全一致
+        mess = "文件信息一致"
+        pat = re.compile(rb'^((?:\S+\s+){8})(\d{4})(\s+\S+.*)$')
+        with open(txt_report_path, 'rb') as fin, open(txt_reply_path, 'wb') as fout:
+            for line_b in fin:
+                line_u = line_b.decode(enc).rstrip('\r\n')
+                parts_u = line_u.split()
+                if len(parts_u) != 10:  # 格式不对，原样输出
+                    fout.write(line_b)
+                    continue
 
-            if key in xls_map:
-                flag = xls_map[key]
-                new_note = ('001' if flag == '全部成功' else '002') + key[3]
-                # new_note = new_note[-7:]  # 保证 7 位
+                # 构造查询 key
+                key = (parts_u[4],  # 姓名
+                       parts_u[3],  # 卡号
+                       parts_u[6],  # 金额
+                       parts_u[8])  # 原 4 位备注
 
-                # 用正则只替换第 9 列那 4 位数字，空格原样保留
-                def repl(m):
-                    return m.group(1)[:-3] + new_note.encode(enc) + m.group(3)
+                if key in xls_map:
+                    flag = xls_map[key]
+                    new_note = ('001' if flag == '全部成功' else '002') + key[3]
 
-                line_b = pat.sub(repl, line_b)
+                    # 用正则只替换第 9 列那 4 位数字，空格原样保留
+                    def repl(m):
+                        return m.group(1)[:-3] + new_note.encode(enc) + m.group(3)
 
-            fout.write(line_b)
+                    line_b = pat.sub(repl, line_b)
 
-    print('回盘文件转换成功！', txt_reply_path)
+                fout.write(line_b)
+        print('回盘文件转换成功！', txt_reply_path)
+        return mess,[],[]
+    else:
+        mess = "报盘txt与回盘xls信息不一致"
+        # 如需详细差异，可打印：
+        txt_xls = sorted(txt_keys - xls_keys, key=lambda x: (x[0], x[1]))
+        xls_txt = sorted(xls_keys - txt_keys, key=lambda x: (x[0], x[1]))
+        return mess,txt_xls,xls_txt         # 不一致可直接退出，不再生成回盘文件
 
 # -------------------- 3. 他行报盘 --------------------
 def OtherOffer(txt_path,excel_path):
@@ -258,7 +275,7 @@ def OtherOffer(txt_path,excel_path):
 
 # -------------------- 4. 他行回盘 --------------------
 def OtherReply(txt_report_path, excel_reply_path,txt_reply_path):
-
+    mess = ""
     # ---------- ①. 读 xls 建字典 ----------
     wb = xlrd.open_workbook(excel_reply_path)
     sheet = wb.sheet_by_index(0)
@@ -267,49 +284,66 @@ def OtherReply(txt_report_path, excel_reply_path,txt_reply_path):
         row = sheet.row_values(r)
         key = (str(row[0]).strip(),  # 姓名
                str(row[1]).strip(),  # 卡号
-               str(row[5]).strip(),  #协议书号
+               str(row[5]).strip(),  # 协议书号
                str(int(round(float(row[7]) * 100))),  # 金额*100
                str(row[8]).strip())  # 原备注
         flag = str(row[10]).strip()
-        xls_map[key] = flag
+        xls_map[key] = flag  # value 先保留，后面还要用
 
     # ---------- ②. 编码侦探 ----------
     with open(txt_report_path, 'rb') as f:
         raw = f.read(10000)
     enc = chardet.detect(raw)['encoding'] or 'gbk'
-    # print('detected encode:', enc)
 
-    # ---------- ③. 逐行处理 ----------
-    # 正则：10 列，第 9 列正好是 4 位数字
-    # 分组：前面部分、第 9 列、后面部分
-    pat = re.compile(rb'^((?:\S+\s+){8})(\d{4})(\s+\S+.*)$')
-
-    with open(txt_report_path, 'rb') as fin, open(txt_reply_path, 'wb') as fout:
+    # ---------- ③. 收集 txt 中的 key ----------
+    txt_keys = set()
+    with open(txt_report_path, 'rb') as fin:
         for line_b in fin:
             line_u = line_b.decode(enc).rstrip('\r\n')
             parts_u = line_u.split()
-            if len(parts_u) != 10:  # 格式不对，原样输出
-                fout.write(line_b)
+            if len(parts_u) != 10:
                 continue
+            key = (parts_u[4], parts_u[3], parts_u[7], parts_u[6], parts_u[8])
+            txt_keys.add(key)
 
-            # 构造查询 key
-            key = (parts_u[4],  # 姓名
-                   parts_u[3],  # 卡号
-                   parts_u[7],  # 协议书号
-                   parts_u[6],  # 金额
-                   parts_u[8])  # 原 4 位备注
+    # ---------- ④. 核对并逐行处理----------
+    # 正则：10 列，第 9 列正好是 4 位数字
+    # 分组：前面部分、第 9 列、后面部分
+    xls_keys = set(xls_map.keys())
+    if txt_keys == xls_keys:  # 集合相等：元素个数与内容完全一致
+        mess = "文件信息一致"
+        pat = re.compile(rb'^((?:\S+\s+){8})(\d{4})(\s+\S+.*)$')
+        with open(txt_report_path, 'rb') as fin, open(txt_reply_path, 'wb') as fout:
+            for line_b in fin:
+                line_u = line_b.decode(enc).rstrip('\r\n')
+                parts_u = line_u.split()
+                if len(parts_u) != 10:  # 格式不对，原样输出
+                    fout.write(line_b)
+                    continue
 
-            if key in xls_map:
-                flag = xls_map[key]
-                new_note = ('001' if flag == '全部成功' else '002') + key[4]
-                # new_note = new_note[-7:]  # 保证 7 位
+                # 构造查询 key
+                key = (parts_u[4],  # 姓名
+                       parts_u[3],  # 卡号
+                       parts_u[7],  # 协议书号
+                       parts_u[6],  # 金额
+                       parts_u[8])  # 原 4 位备注
 
-                # 用正则只替换第 9 列那 4 位数字，空格原样保留
-                def repl(m):
-                    return m.group(1)[:-3] + new_note.encode(enc) + m.group(3)
+                if key in xls_map:
+                    flag = xls_map[key]
+                    new_note = ('001' if flag == '全部成功' else '002') + key[4]
 
-                line_b = pat.sub(repl, line_b)
+                    # 用正则只替换第 9 列那 4 位数字，空格原样保留
+                    def repl(m):
+                        return m.group(1)[:-3] + new_note.encode(enc) + m.group(3)
 
-            fout.write(line_b)
+                    line_b = pat.sub(repl, line_b)
 
-    print('回盘文件转换成功！', txt_reply_path)
+                fout.write(line_b)
+        print('回盘文件转换成功！', txt_reply_path)
+        return mess, [], []
+    else:
+        mess = "报盘txt与回盘xls信息不一致"
+        # 如需详细差异，可打印：
+        txt_xls = sorted(txt_keys - xls_keys, key=lambda x: (x[0], x[1]))
+        xls_txt = sorted(xls_keys - txt_keys, key=lambda x: (x[0], x[1]))
+        return mess, txt_xls, xls_txt  # 不一致可直接退出，不再生成回盘文件
