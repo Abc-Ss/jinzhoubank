@@ -58,13 +58,14 @@ def LocalOffer(txt_path, excel_path):
                 amount_str = match.group(7)
                 remark = match.group(9).strip()
 
-                # 处理金额：有值则保留两位小数，空值则记为0
+                # 处理金额：有值则保留两位小数并转为字符串，空值则记为"0.00"
                 if amount_str:
-                    amount_decimal = round(float(amount_str) / 100, 2)
+                    # 先转换为浮点数处理，再格式化为两位小数的字符串
+                    amount_text = f"{round(float(amount_str) / 100, 2):.2f}"
                 else:
-                    amount_decimal = 0.0  # 明确为浮点型
+                    amount_text = "0.00"  # 明确为字符串格式的两位小数
 
-                data.append([company, card_num, amount_decimal, remark, None, None])
+                data.append([company, card_num, amount_text, remark, None, None])
             except (ValueError, IndexError) as e:
                 unprocessed_lines.append(f"行{line_num}：解析错误 - {str(e)}")
         else:
@@ -72,21 +73,16 @@ def LocalOffer(txt_path, excel_path):
 
     # 直接使用xlwt创建xls文件
     workbook = xlwt.Workbook(encoding='utf-8')
-    worksheet = workbook.add_sheet('工行')  # 直接创建工作表
+    worksheet = workbook.add_sheet('数据')  # 直接创建工作表
 
     # 定义格式
     header_font = xlwt.Font()
     header_font.bold = True
     header_style = xlwt.XFStyle()
     header_style.font = header_font
-    # 表头也设置为文本格式（除金额列标题）
-    header_style.num_format_str = '@'
+    header_style.num_format_str = '@'  # 表头统一使用文本格式
 
-    # 金额列格式（强制数字类型，两位小数）
-    money_style = xlwt.XFStyle()
-    money_style.num_format_str = '#,##0.00'  # 明确数字格式
-
-    # 文本格式（所有其他列使用）
+    # 文本格式（所有列都使用文本格式）
     text_style = xlwt.XFStyle()
     text_style.num_format_str = '@'  # 强制文本格式
 
@@ -96,34 +92,17 @@ def LocalOffer(txt_path, excel_path):
 
     # 写入表头
     for col_idx, header in enumerate(headers):
-        # 金额列标题使用默认格式，其他表头用文本格式
-        if col_idx == 2:
-            worksheet.write(0, col_idx, header, header_style)
-        else:
-            worksheet.write(0, col_idx, header, header_style)
+        worksheet.write(0, col_idx, header, header_style)
 
     # 写入数据
     for row_idx, row_data in enumerate(data, 1):  # 从1开始（跳过表头）
         for col_idx, value in enumerate(row_data):
-            # 金额列（索引2）应用数字格式
-            if col_idx == 2:
-                worksheet.write(row_idx, col_idx, float(value), money_style)
-            # 其他所有列应用文本格式
-            else:
-                # 转换为字符串后写入，确保文本格式
-                cell_value = str(value) if value is not None else ''
-                worksheet.write(row_idx, col_idx, cell_value, text_style)
+            # 所有列都应用文本格式
+            cell_value = str(value) if value is not None else ''
+            worksheet.write(row_idx, col_idx, cell_value, text_style)
 
     # 保存文件
     workbook.save(excel_path)
-
-    # # 输出处理结果
-    # print(f"成功提取 {len(data)} 条数据")
-    # if unprocessed_lines:
-    #     print(f"未处理 {len(unprocessed_lines)} 行，具体行号及原因：")
-    #     for line_info in unprocessed_lines:
-    #         print(line_info)
-    print('报盘文件转换成功！', excel_path)
 
 # -------------------- 2. 本行回盘 --------------------
 def LocalReply(txt_report_path, excel_reply_path, txt_reply_path):
