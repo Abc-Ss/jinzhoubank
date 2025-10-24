@@ -181,7 +181,7 @@ def LocalReply(txt_report_path, excel_reply_path, txt_reply_path):
 
 def OtherOffer(txt_path, excel_path):
     XLS_FIELDS = [
-        "姓名", "卡号", "行别", "跨行行号", "业务种类",
+        "姓名\n(不超过60个字节)", "卡号", "行别", "跨行行号", "业务种类",
         "协议书号", "账号地址", "应处理金额(必须小于1亿)",
         "备注", "实处理金额", "处理标志"
     ]
