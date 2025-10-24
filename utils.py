@@ -179,6 +179,9 @@ def LocalReply(txt_report_path, excel_reply_path, txt_reply_path):
 
 # -------------------- 3. 他行报盘 --------------------
 
+import os  # 需导入os模块检查文件状态
+import xlwt
+
 def OtherOffer(txt_path, excel_path):
     XLS_FIELDS = [
         "姓名\n(不超过60个字节)", "卡号", "行别", "跨行行号", "业务种类",
@@ -197,25 +200,22 @@ def OtherOffer(txt_path, excel_path):
                 if len(valid_blocks) != 10:
                     continue
 
-                # 数据映射逻辑（重点修改金额列处理）
                 biz_type = valid_blocks[0][-5:].strip() if len(valid_blocks[0]) >= 5 else "00201"
                 real_bank_code = valid_blocks[2][-12:].strip() if len(valid_blocks[2]) >= 12 else ""
                 card_no = valid_blocks[3].strip()
                 company_name = valid_blocks[4].strip()
                 bank_type = valid_blocks[5].strip() if valid_blocks[5].strip() else "1"
 
-                # 金额处理：先计算浮点数，再格式化为带两位小数的字符串（核心修改）
                 raw_amount = valid_blocks[6].strip()
                 if raw_amount.isdigit():
-                    real_amount = round(int(raw_amount) / 100, 2)  # 计算金额（浮点数）
-                    amount_str = f"{real_amount:.2f}"  # 格式化为两位小数的字符串（如"31.60"）
+                    real_amount = round(int(raw_amount) / 100, 2)
+                    amount_str = f"{real_amount:.2f}"
                 else:
-                    amount_str = "0.00"  # 异常情况默认值
+                    amount_str = "0.00"
 
                 agreement_no = valid_blocks[7].strip()
                 remark = valid_blocks[8].strip()
 
-                # 组装行数据（金额列使用格式化后的字符串）
                 xls_row = [
                     company_name, card_no, bank_type, real_bank_code, biz_type,
                     agreement_no, "", amount_str, remark, "", ""
@@ -223,33 +223,38 @@ def OtherOffer(txt_path, excel_path):
                 data.append(xls_row)
 
         if not data:
-            return
+            raise Exception("未从TXT文件中提取到有效数据")  # 明确无数据错误
     except Exception as e:
-        return
+        raise Exception(f"读取TXT文件失败：{str(e)}")  # 抛出读取错误
 
     try:
+        # 关键：检查文件是否已被打开（通过尝试独占写入判断）
+        if os.path.exists(excel_path):
+            try:
+                # 以独占模式打开文件，若失败则说明被占用
+                with open(excel_path, 'w', encoding='utf-8') as f:
+                    pass  # 仅测试是否可写，不实际写入内容
+            except PermissionError:
+                raise Exception(f"目标文件已被打开：\n{excel_path}\n请关闭该文件后重试")
+
         # 创建工作簿和工作表
         book = xlwt.Workbook(encoding='utf-8')
         sheet = book.add_sheet('sheet1')
 
-        # 定义文本格式（所有列都用文本格式）
         text_style = xlwt.XFStyle()
-        text_style.num_format_str = '@'  # Excel文本格式标识
+        text_style.num_format_str = '@'
 
-        # 写入表头（文本格式）
         for col_idx, header in enumerate(XLS_FIELDS):
             sheet.write(0, col_idx, header, text_style)
 
-        # 写入数据行（所有列都用文本格式，金额已提前格式化为两位小数字符串）
         for row_idx, row_data in enumerate(data, start=1):
             for col_idx, value in enumerate(row_data):
-                # 所有值都按文本写入（金额已是带两位小数的字符串）
                 sheet.write(row_idx, col_idx, str(value) if value != "" else "", text_style)
 
-        # 保存文件
         book.save(excel_path)
     except Exception as e:
-        return
+        raise Exception(f"生成Excel失败：{str(e)}")  # 抛出保存错误
+
     print('报盘文件转换成功！', excel_path)
 
 # -------------------- 4. 他行回盘 --------------------
