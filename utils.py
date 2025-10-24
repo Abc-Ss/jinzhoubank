@@ -199,7 +199,8 @@ def LocalReply(txt_report_path, excel_reply_path, txt_reply_path):
         return mess,txt_xls,xls_txt         # 不一致可直接退出，不再生成回盘文件
 
 # -------------------- 3. 他行报盘 --------------------
-def OtherOffer(txt_path,excel_path):
+
+def OtherOffer(txt_path, excel_path):
     XLS_FIELDS = [
         "姓名", "卡号", "行别", "跨行行号", "业务种类",
         "协议书号", "账号地址", "应处理金额(必须小于1亿)",
@@ -217,19 +218,28 @@ def OtherOffer(txt_path,excel_path):
                 if len(valid_blocks) != 10:
                     continue
 
-                # 数据映射逻辑不变
-                biz_type = valid_blocks[0][-5:].strip() if len(valid_blocks[0]) >=5 else "00201"
-                real_bank_code = valid_blocks[2][-12:].strip() if len(valid_blocks[2]) >=12 else ""
+                # 数据映射逻辑（重点修改金额列处理）
+                biz_type = valid_blocks[0][-5:].strip() if len(valid_blocks[0]) >= 5 else "00201"
+                real_bank_code = valid_blocks[2][-12:].strip() if len(valid_blocks[2]) >= 12 else ""
                 card_no = valid_blocks[3].strip()
                 company_name = valid_blocks[4].strip()
                 bank_type = valid_blocks[5].strip() if valid_blocks[5].strip() else "1"
-                real_amount = round(int(valid_blocks[6].strip())/100, 2) if valid_blocks[6].strip().isdigit() else 0.00
+
+                # 金额处理：先计算浮点数，再格式化为带两位小数的字符串（核心修改）
+                raw_amount = valid_blocks[6].strip()
+                if raw_amount.isdigit():
+                    real_amount = round(int(raw_amount) / 100, 2)  # 计算金额（浮点数）
+                    amount_str = f"{real_amount:.2f}"  # 格式化为两位小数的字符串（如"31.60"）
+                else:
+                    amount_str = "0.00"  # 异常情况默认值
+
                 agreement_no = valid_blocks[7].strip()
                 remark = valid_blocks[8].strip()
 
+                # 组装行数据（金额列使用格式化后的字符串）
                 xls_row = [
                     company_name, card_no, bank_type, real_bank_code, biz_type,
-                    agreement_no, "", real_amount, remark, "", ""
+                    agreement_no, "", amount_str, remark, "", ""
                 ]
                 data.append(xls_row)
 
@@ -239,35 +249,25 @@ def OtherOffer(txt_path,excel_path):
         return
 
     try:
-        # 1. 创建工作簿和工作表
+        # 创建工作簿和工作表
         book = xlwt.Workbook(encoding='utf-8')
         sheet = book.add_sheet('sheet1')
 
-        # 2. 定义格式（核心修改）
-        # 文本格式：所有非金额列使用（新增）
+        # 定义文本格式（所有列都用文本格式）
         text_style = xlwt.XFStyle()
-        text_style.num_format_str = '@'  # '@'是Excel文本格式的标识
+        text_style.num_format_str = '@'  # Excel文本格式标识
 
-        # 金额格式：保留两位小数（原有逻辑保留）
-        money_style = xlwt.XFStyle()
-        money_style.num_format_str = '0.00'
-
-        # 3. 写入表头（修改：应用文本格式）
+        # 写入表头（文本格式）
         for col_idx, header in enumerate(XLS_FIELDS):
-            sheet.write(0, col_idx, header, text_style)  # 表头强制文本
+            sheet.write(0, col_idx, header, text_style)
 
-        # 4. 写入数据行（修改：区分格式）
+        # 写入数据行（所有列都用文本格式，金额已提前格式化为两位小数字符串）
         for row_idx, row_data in enumerate(data, start=1):
             for col_idx, value in enumerate(row_data):
-                if col_idx == 7:  # 应处理金额列（索引7）
-                    # 金额列用数字格式，保留两位小数
-                    sheet.write(row_idx, col_idx, value, money_style)
-                else:
-                    # 其他列强制文本格式（即使是数字也按文本存储）
-                    # 先转为字符串确保文本内容正确
-                    sheet.write(row_idx, col_idx, str(value) if value != "" else "", text_style)
+                # 所有值都按文本写入（金额已是带两位小数的字符串）
+                sheet.write(row_idx, col_idx, str(value) if value != "" else "", text_style)
 
-        # 5. 保存文件
+        # 保存文件
         book.save(excel_path)
     except Exception as e:
         return
